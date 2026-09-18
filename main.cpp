@@ -58,17 +58,23 @@ int main() {
         }
         std::cout << "Montagem concluida! " << layers.size() << " camadas prontas.\n";
 
+        
+
         // ==========================================
-        // O CHEFÃO FINAL: O LOOP AUTOREGRESSIVO COM BENCHMARK
+        // LOOP AUTOREGRESSIVO COM BENCHMARK
         // ==========================================
         std::cout << "\n=======================================\n";
-        std::cout << "   GERANDO TEXTO (A IA ESTA FALANDO)   \n";
-        std::cout << "=======================================\n";
+        std::cout << "             GERANDO TEXTO               \n";
+        std::cout << "=========================================\n";
 
-        int token = 1; // ID do <s> (Start of Sequence)
-        int pos = 0;   // Começamos na posição 0
+            //    std::string prompt_text =
+            //"<|system|>\nVocê é um assistente útil.\n</s>\n"
+            //"<|user|>\nOlá, quem é você?\n</s>\n"
+            //"<|assistant|>\n";
+            std::string prompt_text = "Pergunta: Olá, quem é você?\nResposta:";
 
-        std::cout << "IA: " << tokenizer.decode(token); 
+        std::vector<int> prompt_ids = tokenizer.encode(prompt_text);
+        prompt_ids.insert(prompt_ids.begin(), 1); // BOS
 
         std::vector<float> x(config.dim, 0.0f);
         std::vector<float> x_final(config.dim, 0.0f);
@@ -78,34 +84,51 @@ int main() {
         Tensor& final_norm = model_tensors.at("model.norm.weight");
         Tensor& lm_head = model_tensors.at("lm_head.weight");
 
-        int total_tokens_gerados = 20;
+        int pos = 0;
+        int token = 0;
 
-        // INICIA O CRONÓMETRO GLOBAL DA INFERÊNCIA
-        auto start_time = std::chrono::high_resolution_clock::now();
-
-        for (int step = 0; step < total_tokens_gerados; step++) {
-            
+        // --- PREFILL: passa o prompt inteiro pelo forward, sem imprimir nada ---
+        for (size_t idx = 0; idx < prompt_ids.size(); idx++) {
+            token = prompt_ids[idx];
             copy_vector(x.data(), embed_tokens.data + (token * config.dim), config.dim);
-
             for (int i = 0; i < config.n_layers; i++) {
                 layers[i].forward(x.data(), pos, rope, config);
             }
+            pos++;
+        }
 
+        std::cout << "\n debug: ";
+        std::cout << prompt_text << "\n";
+
+        std::cout << "IA: ";
+
+        int total_tokens_gerados = 40;
+        std::vector<int> generated_so_far;
+
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        for (int step = 0; step < total_tokens_gerados; step++) {
             rms_norm(x_final.data(), x.data(), final_norm.data, config.dim);
             mat_vec_mul(logits.data(), x_final.data(), lm_head.data, config.vocab_size, config.dim);
 
-            int next_token = 0;
-            float max_logit = logits[0];
-            for (int i = 1; i < config.vocab_size; i++) {
-                if (logits[i] > max_logit) {
-                    max_logit = logits[i];
-                    next_token = i;
-                }
+            // --- PENALIDADE DE REPETIÇÃO ---
+            for (int prev_tok : generated_so_far) {
+                logits[prev_tok] -= 0.5f;
             }
+
+            int next_token = sample_token(logits, config.vocab_size, 0.3f, 5);
+
+            if (next_token == 2) break; // </s>
+
+            generated_so_far.push_back(next_token); // <-- registra
 
             std::cout << tokenizer.decode(next_token) << std::flush;
 
             token = next_token;
+            copy_vector(x.data(), embed_tokens.data + (token * config.dim), config.dim);
+            for (int i = 0; i < config.n_layers; i++) {
+                layers[i].forward(x.data(), pos, rope, config);
+            }
             pos++;
         }
 

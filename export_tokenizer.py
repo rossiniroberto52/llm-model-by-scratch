@@ -10,9 +10,7 @@ vocab = [""] * vocab_size
 
 for token, idx in tokenizer.get_vocab().items():
     if idx < vocab_size:
-        # Substituímos o caractere especial " " (usado pelo SentencePiece para espaços)
-        # por um espaço real para facilitar a nossa vida no C++
-        vocab[idx] = token.replace(' ', ' ')
+        vocab[idx] = token  # mantém o '▁' como está, sem trocar por espaço
 
 with open("tokenizer.bin", "wb") as f:
     # 1. Escrevemos o tamanho total do vocabulário (int de 32 bits)

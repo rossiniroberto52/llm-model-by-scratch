@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 #include <numeric>
+#include <random>
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 
@@ -126,6 +128,30 @@ void softmax(std::vector<float>& x, int size) {
     for (int i = 0; i < size; i++) {
         x[i] /= sum;
     }
+}
+
+static std::mt19937 rng(42); // seed fixa 
+
+int sample_token(std::vector<float>& logits, int vocab_size, float temperature = 0.8f, int top_k = 40) {
+    for (int i = 0; i < vocab_size; i++) logits[i] /= temperature;
+
+    std::vector<int> indices(vocab_size);
+    std::iota(indices.begin(), indices.end(), 0);
+    std::partial_sort(indices.begin(), indices.begin() + top_k, indices.end(),
+        [&](int a, int b) { return logits[a] > logits[b]; });
+    indices.resize(top_k);
+
+    float max_logit = logits[indices[0]];
+    std::vector<float> probs(top_k);
+    float sum = 0.0f;
+    for (int i = 0; i < top_k; i++) {
+        probs[i] = std::exp(logits[indices[i]] - max_logit);
+        sum += probs[i];
+    }
+    for (int i = 0; i < top_k; i++) probs[i] /= sum;
+
+    std::discrete_distribution<int> dist(probs.begin(), probs.end());
+    return indices[dist(rng)];
 }
 
 // q: Vetor Query atual [head_dim]
