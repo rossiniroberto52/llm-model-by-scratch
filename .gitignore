@@ -6,4 +6,4 @@ llm_engine
 # Ignorar os pesos do modelo (são gigantes, o Github rejeita)
 *.bin
 *.pth
-*.gguf
+*.gguff
