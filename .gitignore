@@ -1,0 +1,9 @@
+# Ignorar executáveis
+llm_engine
+*.exe
+*.o
+
+# Ignorar os pesos do modelo (são gigantes, o Github rejeita)
+*.bin
+*.pth
+*.gguf
