@@ -1,25 +1,35 @@
 #include <iostream>
+#include <unordered_map>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <vector>
 #include <numeric>
 #include <cassert>
 #include <cmath>
 
+#pragma once
+
 struct Tensor {
     std::vector<int> shape;
-    std::vector<float> data; // Buffer 1D
+    std::vector<float> data_buffer; 
+    float* data;                    
 
-    // Construtor: Calc the total size
     Tensor(std::vector<int> s) : shape(s) {
         int total_size = 1;
-        for (int dim : shape) {
-            total_size *= dim;
-        }
-        data.resize(total_size, 0.0f); // fill with zeros, Zero-Alloc
+        for (int dim : shape) total_size *= dim;
+        data_buffer.resize(total_size, 0.0f);
+        data = data_buffer.data();
     }
 
-    // return the total size of the tensor
+    Tensor(std::vector<int> s, float* external_ptr) : shape(s) {
+        data = external_ptr; 
+    }
+
     int size() const {
-        return data.size();
+        int total_size = 1;
+        for (int dim : shape) total_size *= dim;
+        return total_size;
     }
 };
 
@@ -146,5 +156,64 @@ void self_attention(float* q, float* k_cache, float* v_cache, float* out, int se
         for (int t = 0; t < seq_len; t++) {
             out[i] += scores[t] * v_cache[t * head_dim + i];
         }
+    }
+}
+
+// Soma dois vetores: out = a + b
+void add_vectors(float* out, float* a, float* b, int size) {
+    for (int i = 0; i < size; i++) {
+        out[i] = a[i] + b[i];
+    }
+}
+
+// Copia dados de um lugar para outro (útil para pegar a linha do Embedding)
+void copy_vector(float* dest, float* src, int size) {
+    for (int i = 0; i < size; i++) {
+        dest[i] = src[i];
+    }
+}
+
+// Multiplicação Matriz x Vetor: out = W * x
+// W: matriz de pesos [linhas, colunas] | x: vetor de entrada [colunas]
+void mat_vec_mul(float* out, float* x, float* W, int linhas, int colunas) {
+    for (int i = 0; i < linhas; i++) {
+        float sum = 0.0f;
+        for (int j = 0; j < colunas; j++) {
+            // W[i * colunas + j] é a forma de andar numa matriz achatada 1D
+            sum += W[i * colunas + j] * x[j];
+        }
+        out[i] = sum;
+    }
+}
+
+// Multiplicação elemento a elemento (Hadamard): out = a * b (usado no SwiGLU)
+void mul_vectors(float* out, float* a, float* b, int size) {
+    for (int i = 0; i < size; i++) {
+        out[i] = a[i] * b[i];
+    }
+}
+
+// Normalização RMS (Root Mean Square)
+void rms_norm(float* out, float* x, float* weight, int size) {
+    float ss = 0.0f; // Soma dos quadrados
+    for (int i = 0; i < size; i++) {
+        ss += x[i] * x[i];
+    }
+    ss /= size;
+    ss += 1e-5f; // Epsilon minúsculo pra evitar divisão por zero
+    ss = 1.0f / std::sqrt(ss);
+    
+    // Normaliza e já multiplica pelo peso da camada
+    for (int i = 0; i < size; i++) {
+        out[i] = weight[i] * (ss * x[i]);
+    }
+}
+
+// Função de Ativação SiLU (Sigmoid Linear Unit)
+void silu(float* x, int size) {
+    for (int i = 0; i < size; i++) {
+        float val = x[i];
+        // x * sigmoid(x)
+        x[i] = val * (1.0f / (1.0f + std::exp(-val)));
     }
 }

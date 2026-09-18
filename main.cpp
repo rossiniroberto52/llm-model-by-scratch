@@ -1,70 +1,130 @@
 #include <iostream>
+#include <chrono>
 #include "tensor.hpp"
+#include "tokenizer.hpp"
+#include "weights.hpp"
+#include "llama.hpp"
+
+std::unordered_map<std::string, Tensor> load_weights_map(const std::string& metadata_path, ModelWeights& mmap_weights) {
+    std::unordered_map<std::string, Tensor> tensors;
+    std::ifstream file(metadata_path);
+    
+    if (!file.is_open()) {
+        throw std::runtime_error("Falha ao abrir o ficheiro de metadados!");
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string name;
+        size_t offset;
+        int num_elements;
+        std::string shape_str;
+
+        ss >> name >> offset >> num_elements >> shape_str;
+
+        std::vector<int> shape;
+        std::stringstream shape_ss(shape_str);
+        std::string dim;
+        while (std::getline(shape_ss, dim, ',')) {
+            shape.push_back(std::stoi(dim));
+        }
+
+        float* tensor_ptr = mmap_weights.data + offset;
+        tensors.emplace(name, Tensor(shape, tensor_ptr));
+    }
+
+    std::cout << "Fatiamento do modelo concluido! " << tensors.size() << " tensores prontos a usar.\n";
+    return tensors;
+}
 
 int main() {
-    // Criando matriz A (2x3) e Matriz B (3x2)
-    Tensor A({2, 3});
-    Tensor B({3, 2});
-    Tensor C({2, 2}); // O resultado será 2x2
-
-    // Preenchendo com uns números aleatórios só pra testar
-    A.data = {1.0, 2.0, 3.0, 
-              4.0, 5.0, 6.0};
-              
-    B.data = {7.0, 8.0, 
-              9.0, 10.0, 
-              11.0, 12.0};
-
-    matmul_2d(A, B, C);
-
-    // C deve dar: 
-    // [58, 64]
-    // [139, 154]
-    std::cout << "Resultado C[0,0]: " << C.data[0] << "\n";
-    std::cout << "Resultado C[1,1]: " << C.data[3] << "\n";
-
-    // Inicializando o cache do RoPE pro Llama 3
-    RoPECache rope(8192, 128);
-
-    // ==========================================
-    // TESTE 2: Self-Attention (O Cérebro)
-    // ==========================================
-    int seq_len = 2;   // Vamos simular que a LLM já leu 2 tokens
-    int head_dim = 4;  // Uma "cabeça" minúscula de 4 dimensões (na Llama 3 são 128)
-
-    // O vetor Query (Q) do token atual que estamos tentando prever
-    std::vector<float> q = {1.0f, 0.0f, 1.0f, 0.0f};
-
-    // O KV Cache simulando o histórico da conversa (2 tokens)
-    // Token 0 na primeira linha, Token 1 na segunda
-    std::vector<float> k_cache = {
-        1.0f, 0.1f, 0.1f, 0.1f, // Token 0
-        0.1f, 1.0f, 0.1f, 1.0f  // Token 1
-    };
+    std::cout << "Iniciando motor LLM...\n";
     
-    std::vector<float> v_cache = {
-        10.0f, 10.0f, 10.0f, 10.0f, // Valores do Token 0
-        20.0f, 20.0f, 20.0f, 20.0f  // Valores do Token 1
-    };
+    try {
+        ModelWeights weights("./tinyllama_weights.bin"); 
+        auto model_tensors = load_weights_map("tinyllama_metadata.txt", weights);
+        Tokenizer tokenizer("tokenizer.bin");
+        
+        Config config; 
+        
+        // Inicializa a tabela de senos e cossenos do RoPE
+        RoPECache rope(config.max_seq_len, config.head_dim());
 
-    // Buffer para guardar o resultado
-    std::vector<float> out(head_dim, 0.0f);
+        std::cout << "\nMontando a arquitetura Transformer...\n";
+        std::vector<TransformerBlock> layers;
+        for (int i = 0; i < config.n_layers; i++) {
+            layers.emplace_back(i, model_tensors, config);
+        }
+        std::cout << "Montagem concluida! " << layers.size() << " camadas prontas.\n";
 
-    std::cout << "\nTestando Self-Attention...\n";
+        // ==========================================
+        // O CHEFÃO FINAL: O LOOP AUTOREGRESSIVO COM BENCHMARK
+        // ==========================================
+        std::cout << "\n=======================================\n";
+        std::cout << "   GERANDO TEXTO (A IA ESTA FALANDO)   \n";
+        std::cout << "=======================================\n";
 
-    // 1. Aplicar RoPE no token atual (simulando que ele está na posição 1)
-    // Passamos o ponteiro puro (.data()) para a nossa função
-    apply_rope(q.data(), k_cache.data() + head_dim, 1, head_dim, rope);
+        int token = 1; // ID do <s> (Start of Sequence)
+        int pos = 0;   // Começamos na posição 0
 
-    // 2. Rodar a Atenção
-    self_attention(q.data(), k_cache.data(), v_cache.data(), out.data(), seq_len, head_dim);
+        std::cout << "IA: " << tokenizer.decode(token); 
 
-    // 3. Imprimir resultado
-    std::cout << "Resultado da Atencao (Out): [";
-    for (int i = 0; i < head_dim; i++) {
-        std::cout << out[i] << (i == head_dim - 1 ? "" : ", ");
+        std::vector<float> x(config.dim, 0.0f);
+        std::vector<float> x_final(config.dim, 0.0f);
+        std::vector<float> logits(config.vocab_size, 0.0f);
+
+        Tensor& embed_tokens = model_tensors.at("model.embed_tokens.weight");
+        Tensor& final_norm = model_tensors.at("model.norm.weight");
+        Tensor& lm_head = model_tensors.at("lm_head.weight");
+
+        int total_tokens_gerados = 20;
+
+        // INICIA O CRONÓMETRO GLOBAL DA INFERÊNCIA
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        for (int step = 0; step < total_tokens_gerados; step++) {
+            
+            copy_vector(x.data(), embed_tokens.data + (token * config.dim), config.dim);
+
+            for (int i = 0; i < config.n_layers; i++) {
+                layers[i].forward(x.data(), pos, rope, config);
+            }
+
+            rms_norm(x_final.data(), x.data(), final_norm.data, config.dim);
+            mat_vec_mul(logits.data(), x_final.data(), lm_head.data, config.vocab_size, config.dim);
+
+            int next_token = 0;
+            float max_logit = logits[0];
+            for (int i = 1; i < config.vocab_size; i++) {
+                if (logits[i] > max_logit) {
+                    max_logit = logits[i];
+                    next_token = i;
+                }
+            }
+
+            std::cout << tokenizer.decode(next_token) << std::flush;
+
+            token = next_token;
+            pos++;
+        }
+
+// PARA O CRONÓMETRO E CALCULA A VELOCIDADE
+        auto end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = end_time - start_time;
+        double segundos = elapsed.count();
+        double tokens_por_segundo = total_tokens_gerados / segundos;
+
+        std::cout << "\n\n---------------------------------------\n";
+        std::cout << "Estatísticas de Performance:\n";
+        std::cout << "Tempo total: " << segundos << " segundos\n";
+        std::cout << "Velocidade:  " << tokens_por_segundo << " tokens/segundo\n";
+        std::cout << "---------------------------------------\n";
+
+    } catch (const std::exception& e) {
+        std::cerr << "ERRO FATAL: " << e.what() << '\n';
+        return 1;
     }
-    std::cout << "]\n";
 
     return 0;
 }
