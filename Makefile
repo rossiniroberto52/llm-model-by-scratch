@@ -1,6 +1,6 @@
 CXX = g++
 # -O3 é crucial aqui para ativar as otimizações agressivas de velocidade do compilador
-CXXFLAGS = -std=c++17 -Wall -Wextra -O3
+CXXFLAGS = -std=c++17 -Wall -Wextra -O3 -march=native -ffast-math -fopenmp
 
 # Nome do executável final
 TARGET = llm_engine

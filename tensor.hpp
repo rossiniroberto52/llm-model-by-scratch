@@ -176,10 +176,10 @@ void copy_vector(float* dest, float* src, int size) {
 // Multiplicação Matriz x Vetor: out = W * x
 // W: matriz de pesos [linhas, colunas] | x: vetor de entrada [colunas]
 void mat_vec_mul(float* out, float* x, float* W, int linhas, int colunas) {
+    #pragma omp parallel for
     for (int i = 0; i < linhas; i++) {
         float sum = 0.0f;
         for (int j = 0; j < colunas; j++) {
-            // W[i * colunas + j] é a forma de andar numa matriz achatada 1D
             sum += W[i * colunas + j] * x[j];
         }
         out[i] = sum;
