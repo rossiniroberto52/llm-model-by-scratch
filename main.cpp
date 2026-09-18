@@ -66,5 +66,27 @@ int main() {
     }
     std::cout << "]\n";
 
+    // ==========================================
+    // TESTE 3: RMSNorm e SiLU
+    // ==========================================
+    std::cout << "\nTestando RMSNorm e SiLU...\n";
+    
+    std::vector<float> norm_in = {1.0f, -2.0f, 3.0f, -4.0f}; // Vetor de entrada
+    std::vector<float> norm_weight = {1.0f, 1.0f, 1.0f, 1.0f}; // Pesos de escala
+    std::vector<float> norm_out(4, 0.0f);
+
+    // Testa RMSNorm
+    rms_norm(norm_out.data(), norm_in.data(), norm_weight.data(), 4);
+    std::cout << "RMSNorm (Out): [";
+    for(int i = 0; i < 4; i++) std::cout << norm_out[i] << (i == 3 ? "" : ", ");
+    std::cout << "]\n";
+
+    // Testa SiLU
+    std::vector<float> silu_in = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
+    silu(silu_in.data(), 5);
+    std::cout << "SiLU (Out): [";
+    for(int i = 0; i < 5; i++) std::cout << silu_in[i] << (i == 4 ? "" : ", ");
+    std::cout << "]\n";
+
     return 0;
 }

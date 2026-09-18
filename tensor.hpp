@@ -148,3 +148,27 @@ void self_attention(float* q, float* k_cache, float* v_cache, float* out, int se
         }
     }
 }
+
+void rms_norm(float* out, float* x, float* weight, int size) {
+    float ss = 0.0f; // Soma dos quadrados
+    for (int i = 0; i < size; i++) {
+        ss += x[i] * x[i];
+    }
+    ss /= size;
+    ss += 1e-5f; // Epsilon (um valor minúsculo para evitar divisão por zero)
+    ss = 1.0f / std::sqrt(ss);
+    
+    // Normaliza e multiplica pelo peso da camada
+    for (int i = 0; i < size; i++) {
+        out[i] = weight[i] * (ss * x[i]);
+    }
+}
+
+void silu(float* x, int size) {
+    for (int i = 0; i < size; i++) {
+        float val = x[i];
+        // Fórmula: x * sigmoid(x)
+        x[i] = val * (1.0f / (1.0f + std::exp(-val)));
+    }
+}
+
